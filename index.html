@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ファイル共有</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-512x512.png" sizes="512x512" type="image/png">
+  <meta name="theme-color" content="#4f46e5">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      background: #f4f6f8;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 2rem;
+    }
+    h2 {
+      font-size: 1.4rem;
+      margin-bottom: 1rem;
+    }
+    label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    input[type="file"],
+    textarea,
+    input[type="text"] {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+    button {
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #4338ca;
+    }
+    .progress-bar {
+      width: 100%;
+      background: #e0e0e0;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 1rem 0;
+      height: 14px;
+    }
+    .progress-bar-fill {
+      background: #4caf50;
+      width: 0%;
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+    canvas {
+      margin-top: 1rem;
+    }
+    #reader {
+      margin-top: 1rem;
+      width: 100%;
+    }
+    a {
+      color: #4f46e5;
+      word-break: break-word;
+      display: block;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>送信</h2>
+    <label>ファイルを選択:</label>
+    <input type="file" id="fileInput">
+    <button id="shareBtn">共有リンクを生成</button>
+    <div class="progress-bar"><div id="sendProgress" class="progress-bar-fill"></div></div>
+    <textarea id="magnetDisplay" readonly rows="2" placeholder="共有リンクがここに表示されます"></textarea>
+    <div id="qrCanvas"></div>
+  </div>
+
+  <div class="card">
+    <h2>受信</h2>
+    <button id="scanBtn">QRを読み取る</button>
+    <div id="reader" style="max-width: 400px;"></div>
+    <label>magnet URI:</label>
+    <input type="text" id="magnetInput" placeholder="magnet:?xt=...">
+    <button id="downloadBtn">受信を開始</button>
+    <div class="progress-bar"><div id="recvProgress" class="progress-bar-fill"></div></div>
+    <div id="fileContainer"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/webtorrent/webtorrent.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script>
+    const client = new WebTorrent();
+    function updateProgress(id, val) {
+      document.getElementById(id).style.width = `${val}%`;
+    }
+    document.getElementById('shareBtn').onclick = () => {
+      const file = document.getElementById('fileInput').files[0];
+      if (!file) return alert("ファイルを選択してください");
+      updateProgress('sendProgress', 10);
+      client.seed(file, torrent => {
+        const magnet = torrent.magnetURI;
+        document.getElementById('magnetDisplay').value = magnet;
+        updateProgress('sendProgress', 100);
+        QRCode.toCanvas(document.createElement('canvas'), magnet, { width: 256 }, (err, canvas) => {
+          if (!err) {
+            const qrArea = document.getElementById('qrCanvas');
+            qrArea.innerHTML = '';
+            qrArea.appendChild(canvas);
+          }
+        });
+      });
+    };
+    document.getElementById('downloadBtn').onclick = () => {
+      const uri = document.getElementById('magnetInput').value.trim();
+      if (!uri) return alert("magnet URI を入力してください");
+      updateProgress('recvProgress', 10);
+      client.add(uri, torrent => {
+        torrent.files.forEach(file => {
+          file.getBlob((err, blob) => {
+            if (err) return alert("ダウンロードエラー");
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = file.name;
+            a.textContent = `ダウンロード: ${file.name}`;
+            document.getElementById('fileContainer').appendChild(a);
+            updateProgress('recvProgress', 100);
+          });
+        });
+        torrent.on('download', () => {
+          updateProgress('recvProgress', Math.floor(torrent.progress * 100));
+        });
+      });
+    };
+    document.getElementById('scanBtn').onclick = () => {
+      const reader = new Html5Qrcode("reader");
+      reader.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        decoded => {
+          reader.stop();
+          document.getElementById('magnetInput').value = decoded;
+        },
+        err => {}
+      ).catch(e => alert("カメラ起動に失敗: " + e));
+    };
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js')
+        .then(reg => console.log("SW registered:", reg))
+        .catch(err => console.error("SW registration failed:", err));
+    }
+  </script>
+</body>
+</html>
