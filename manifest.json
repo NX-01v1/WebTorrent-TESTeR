@@ -1,13 +1,19 @@
 {
-  "name": "ファイル共有",
-  "short_name": "共有",
-  "start_url": "./index.html",
+  "name": "ファイル共有アプリ",
+  "short_name": "ファイル共有",
+  "description": "複数のファイルをピアツーピアで共有するウェブアプリ",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#f4f6f8",
-  "theme_color": "#4f46e5",
+  "theme_color": "#008BF2",
   "icons": [
     {
-      "src": "icon-512x512.png",
+      "src": "IMG_1436.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "IMG_1436.png",
       "sizes": "512x512",
       "type": "image/png"
     }
