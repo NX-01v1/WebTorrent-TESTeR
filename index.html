@@ -41,7 +41,7 @@
       height: 100%;
       transition: width 0.3s ease;
     }
-    #qrCanvas canvas {
+    #qrCanvas canvas, #urlQrCanvas canvas {
         margin-top: 1rem;
         display: block;
         width: 100%;
@@ -58,9 +58,10 @@
 </head>
 <body class="p-4 md:p-8">
   <!-- 広い画面ではflexboxを使い、カードを横並びに配置 -->
-  <div class="md:flex md:space-x-8 md:items-start md:justify-center">
+  <!-- items-stretchを追加して高さを揃える -->
+  <div class="md:flex md:space-x-8 md:items-stretch md:justify-center">
     <!-- 送信カード -->
-    <div class="card md:w-1/2">
+    <div class="card md:flex-1">
       <h2 class="text-xl font-bold mb-4 text-center">送信</h2>
       <label class="block text-gray-700 font-semibold mb-2">ファイルを選択:</label>
       <input type="file" id="fileInput" multiple class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
@@ -78,7 +79,7 @@
     </div>
 
     <!-- 受信カード -->
-    <div class="card md:w-1/2">
+    <div class="card md:flex-1">
       <h2 class="text-xl font-bold mb-4 text-center">受信</h2>
       
       <!-- カメラ選択ドロップダウンメニューを追加 -->
@@ -102,6 +103,17 @@
       </div>
       
       <div id="fileContainer" class="mt-4"></div>
+      
+      <!-- URL QRコードセクションを追加 -->
+      <div class="mt-8 pt-4 border-t border-gray-200">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="text-lg font-bold">サイト共有</h3>
+            <button id="toggleUrlQrBtn" class="text-blue-600 hover:text-blue-800 transition duration-200">最大化</button>
+          </div>
+          <div id="urlQrContainer" class="hidden">
+            <div id="urlQrCanvas" class="flex justify-center mt-4"></div>
+          </div>
+      </div>
     </div>
   </div>
 
@@ -113,6 +125,37 @@
     // WebTorrentクライアントを初期化
     const client = new WebTorrent();
     let qrReader; // QRコードリーダーのインスタンスを保持するための変数
+    let wakeLock = null; // Wake Lockオブジェクトを保持する変数
+
+    // Wake Lockを取得する関数
+    async function acquireWakeLock() {
+      if ('keepAwake' in screen) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log("Wake Lock acquired.");
+          wakeLock.addEventListener('release', () => {
+            console.log("Wake Lock released.");
+          });
+        } catch (err) {
+          console.error(`Wake Lock failed: ${err.name}, ${err.message}`);
+        }
+      } else {
+        console.log("Wake Lock API is not supported by this browser.");
+      }
+    }
+
+    // Wake Lockを解放する関数
+    function releaseWakeLock() {
+      if (wakeLock) {
+        wakeLock.release()
+          .then(() => {
+            wakeLock = null;
+          })
+          .catch(err => {
+            console.error("Wake Lock release failed:", err);
+          });
+      }
+    }
 
     // カスタムアラート機能
     function showMessage(message) {
@@ -154,8 +197,11 @@
         }
     }
     
-    // ページロード時にカメラリストを読み込む
-    window.onload = populateCameraList;
+    // ページロード時にカメラリストとURL QRコードを生成
+    window.onload = () => {
+        populateCameraList();
+        generateUrlQrCode();
+    };
 
     // ファイル送信ロジック
     document.getElementById('shareBtn').onclick = () => {
@@ -163,6 +209,9 @@
       if (files.length === 0) {
         return showMessage("ファイルを選択してください");
       }
+
+      // Wake Lockを取得
+      acquireWakeLock();
 
       // 共有中のファイル一覧をUIに表示
       const sharingFileList = document.getElementById('sharingFileList');
@@ -183,6 +232,9 @@
         document.getElementById('magnetDisplay').value = magnet;
         updateProgress('sendProgress', 100);
         
+        // 転送完了時にWake Lockを解放
+        releaseWakeLock();
+
         // QRコードを生成して表示
         QRCode.toCanvas(document.createElement('canvas'), magnet, { width: 256 }, (err, canvas) => {
           if (!err) {
@@ -201,6 +253,9 @@
         return showMessage("magnet URI を入力してください");
       }
 
+      // Wake Lockを取得
+      acquireWakeLock();
+
       updateProgress('recvProgress', 10);
 
       client.add(uri, torrent => {
@@ -218,6 +273,9 @@
         // 全ファイルのダウンロードが完了したら実行
         torrent.on('done', () => {
           updateProgress('recvProgress', 100);
+          // 転送完了時にWake Lockを解放
+          releaseWakeLock();
+
           torrent.files.forEach(file => {
             file.getBlob((err, blob) => {
               if (err) return showMessage("ダウンロードエラー");
@@ -270,6 +328,33 @@
           showMessage("カメラ起動に失敗しました: " + e);
           console.error("カメラ起動エラー:", e);
       });
+    };
+    
+    // 現在のサイトURLのQRコードを生成する関数
+    function generateUrlQrCode() {
+        const currentUrl = window.location.href;
+        const qrArea = document.getElementById('urlQrCanvas');
+        if (qrArea) {
+            QRCode.toCanvas(document.createElement('canvas'), currentUrl, { width: 256 }, (err, canvas) => {
+              if (!err) {
+                qrArea.innerHTML = '';
+                qrArea.appendChild(canvas);
+              }
+            });
+        }
+    }
+
+    // URL QRコードの表示/非表示を切り替える機能
+    document.getElementById('toggleUrlQrBtn').onclick = () => {
+        const urlQrContainer = document.getElementById('urlQrContainer');
+        const toggleBtn = document.getElementById('toggleUrlQrBtn');
+        if (urlQrContainer.classList.contains('hidden')) {
+            urlQrContainer.classList.remove('hidden');
+            toggleBtn.textContent = '最小化';
+        } else {
+            urlQrContainer.classList.add('hidden');
+            toggleBtn.textContent = '最大化';
+        }
     };
 
     // PWA (Progressive Web App) の Service Worker を登録
