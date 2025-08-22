@@ -181,7 +181,7 @@
 
     // 時間を秒単位から hh:mm:ss 形式にフォーマットする関数
     function formatTime(seconds) {
-      if (seconds === Infinity) return "計算中...";
+      if (seconds === Infinity || isNaN(seconds)) return "計算中...";
       if (seconds < 0) return "完了";
       const h = Math.floor(seconds / 3600);
       const m = Math.floor((seconds % 3600) / 60);
@@ -366,7 +366,7 @@
           qrReader.stop().catch(e => console.error("カメラ停止エラー:", e));
       }
       
-      const readerContainer = document.getElementById('reader");
+      const readerContainer = document.getElementById('reader');
       qrReader = new Html5Qrcode("reader");
       qrReader.start(
         selectedCameraId, // 選択されたカメラのIDを使用
