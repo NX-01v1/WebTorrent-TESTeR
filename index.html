@@ -244,34 +244,34 @@
       client.seed(Array.from(files), torrent => {
         const magnet = torrent.magnetURI;
         document.getElementById('magnetDisplay').value = magnet;
-        updateProgress('sendProgress', 100);
-
+        
         // 転送速度と残り時間の表示を更新
         sendProgressTimer = setInterval(() => {
           const uploaded = torrent.uploaded;
           const total = torrent.length;
           const uploadSpeed = torrent.uploadSpeed; // bytes/sec
+          const numPeers = torrent.numPeers;
           
-          if (uploadSpeed > 0) {
+          if (numPeers === 0) {
+              document.getElementById('sendTimeRemaining').textContent = "ピアを待機中...";
+          } else if (uploadSpeed > 0) {
             const remainingBytes = total - uploaded;
             const timeRemaining = remainingBytes / uploadSpeed;
-            document.getElementById('sendTimeRemaining').textContent = `アップロード速度: ${(uploadSpeed / 1024 / 1024).toFixed(2)} MB/s, 残り時間: ${formatTime(timeRemaining)}`;
+            document.getElementById('sendTimeRemaining').textContent = `アップロード速度: ${(uploadSpeed / 1024 / 1024).toFixed(2)} MB/s, 残り時間: ${formatTime(timeRemaining)}, ピア数: ${numPeers}`;
           } else {
-            document.getElementById('sendTimeRemaining').textContent = "アップロード速度: 計算中...";
+            document.getElementById('sendTimeRemaining').textContent = `アップロード速度: 計算中..., ピア数: ${numPeers}`;
           }
         }, 1000);
 
         // 転送完了時にタイマーを停止
         torrent.on('done', () => {
           clearInterval(sendProgressTimer);
+          updateProgress('sendProgress', 100);
           document.getElementById('sendTimeRemaining').textContent = "完了しました。";
           // 転送完了時にWake Lockを解放
           releaseWakeLock();
         });
         
-        // 転送完了時にWake Lockを解放
-        releaseWakeLock();
-
         // QRコードを生成して表示
         QRCode.toCanvas(document.createElement('canvas'), magnet, { width: 256 }, (err, canvas) => {
           if (!err) {
@@ -312,13 +312,16 @@
           const downloaded = torrent.downloaded;
           const total = torrent.length;
           const downloadSpeed = torrent.downloadSpeed; // bytes/sec
+          const numPeers = torrent.numPeers;
 
-          if (downloadSpeed > 0) {
+          if (numPeers === 0) {
+              document.getElementById('recvTimeRemaining').textContent = "ピアを待機中...";
+          } else if (downloadSpeed > 0) {
             const remainingBytes = total - downloaded;
             const timeRemaining = remainingBytes / downloadSpeed;
-            document.getElementById('recvTimeRemaining').textContent = `ダウンロード速度: ${(downloadSpeed / 1024 / 1024).toFixed(2)} MB/s, 残り時間: ${formatTime(timeRemaining)}`;
+            document.getElementById('recvTimeRemaining').textContent = `ダウンロード速度: ${(downloadSpeed / 1024 / 1024).toFixed(2)} MB/s, 残り時間: ${formatTime(timeRemaining)}, ピア数: ${numPeers}`;
           } else {
-            document.getElementById('recvTimeRemaining').textContent = "ダウンロード速度: 計算中...";
+            document.getElementById('recvTimeRemaining').textContent = `ダウンロード速度: 計算中..., ピア数: ${numPeers}`;
           }
         }, 1000);
 
@@ -363,7 +366,7 @@
           qrReader.stop().catch(e => console.error("カメラ停止エラー:", e));
       }
       
-      const readerContainer = document.getElementById('reader');
+      const readerContainer = document.getElementById('reader");
       qrReader = new Html5Qrcode("reader");
       qrReader.start(
         selectedCameraId, // 選択されたカメラのIDを使用
