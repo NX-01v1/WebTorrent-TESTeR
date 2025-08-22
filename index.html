@@ -2,22 +2,15 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ファイル共有</title>
+  <title>ファイル共有 (複数ファイル対応)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="icon-512x512.png" sizes="512x512" type="image/png">
-  <meta name="theme-color" content="#4f46e5">
+  <!-- Tailwind CSSを読み込み、モダンなデザインに -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
     body {
       font-family: 'Inter', sans-serif;
-      margin: 0;
       background: #f4f6f8;
-      color: #333;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem 1rem;
     }
     .card {
       background: #fff;
@@ -25,41 +18,9 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
       padding: 1.5rem;
       width: 100%;
-      max-width: 600px;
-      margin-bottom: 2rem;
-    }
-    h2 {
-      font-size: 1.4rem;
-      margin-bottom: 1rem;
-    }
-    label {
-      font-weight: 600;
-      display: block;
-      margin-bottom: 0.5rem;
-    }
-    input[type="file"],
-    textarea,
-    input[type="text"] {
-      width: 100%;
-      padding: 0.75rem;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      margin-bottom: 1rem;
-      font-size: 1rem;
-      box-sizing: border-box;
-    }
-    button {
-      background: #4f46e5;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    button:hover {
-      background: #4338ca;
+      /* 広い画面では左右に並べるために、カードの最大幅をなくす */
+      max-width: none;
+      margin: 2rem auto;
     }
     .progress-bar {
       width: 100%;
@@ -75,59 +36,149 @@
       height: 100%;
       transition: width 0.3s ease;
     }
-    canvas {
-      margin-top: 1rem;
+    #qrCanvas canvas {
+        margin-top: 1rem;
+        display: block;
+        width: 100%;
+        height: auto;
     }
-    #reader {
+    .file-list {
       margin-top: 1rem;
-      width: 100%;
-    }
-    a {
-      color: #4f46e5;
-      word-break: break-word;
-      display: block;
-      margin-top: 0.5rem;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1rem;
     }
   </style>
 </head>
-<body>
-  <div class="card">
-    <h2>送信</h2>
-    <label>ファイルを選択:</label>
-    <input type="file" id="fileInput">
-    <button id="shareBtn">共有リンクを生成</button>
-    <div class="progress-bar"><div id="sendProgress" class="progress-bar-fill"></div></div>
-    <textarea id="magnetDisplay" readonly rows="2" placeholder="共有リンクがここに表示されます"></textarea>
-    <div id="qrCanvas"></div>
+<body class="p-4 md:p-8">
+  <!-- 広い画面ではflexboxを使い、カードを横並びに配置 -->
+  <div class="md:flex md:space-x-8 md:items-start md:justify-center">
+    <!-- 送信カード -->
+    <div class="card md:w-1/2">
+      <h2 class="text-xl font-bold mb-4 text-center">送信</h2>
+      <label class="block text-gray-700 font-semibold mb-2">ファイルを選択:</label>
+      <input type="file" id="fileInput" multiple class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      <button id="shareBtn" class="w-full mt-4 bg-[#008BF2] text-white font-semibold py-2 rounded-lg hover:bg-blue-500 transition duration-200">共有リンクを生成</button>
+      
+      <div class="progress-bar"><div id="sendProgress" class="progress-bar-fill"></div></div>
+      
+      <div id="sharingFileList" class="file-list hidden">
+        <h3 class="font-bold mb-2">共有中のファイル:</h3>
+        <ul id="sharingFileUl"></ul>
+      </div>
+
+      <textarea id="magnetDisplay" readonly rows="3" placeholder="共有リンクがここに表示されます" class="w-full p-3 mt-4 text-sm bg-gray-50 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"></textarea>
+      <div id="qrCanvas" class="flex justify-center mt-4"></div>
+    </div>
+
+    <!-- 受信カード -->
+    <div class="card md:w-1/2">
+      <h2 class="text-xl font-bold mb-4 text-center">受信</h2>
+      
+      <!-- カメラ選択ドロップダウンメニューを追加 -->
+      <div class="mb-4">
+        <label for="cameraSelect" class="block text-gray-700 font-semibold mb-2">カメラを選択:</label>
+        <select id="cameraSelect" class="w-full p-3 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"></select>
+      </div>
+
+      <button id="scanBtn" class="w-full bg-[#008BF2] text-white font-semibold py-2 rounded-lg hover:bg-blue-500 transition duration-200">QRを読み取る</button>
+      <div id="reader" style="max-width: 400px; margin: 1rem auto;"></div>
+      
+      <label class="block text-gray-700 font-semibold mt-4 mb-2">magnet URI:</label>
+      <input type="text" id="magnetInput" placeholder="magnet:?xt=..." class="w-full p-3 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+      <button id="downloadBtn" class="w-full mt-4 bg-[#008BF2] text-white font-semibold py-2 rounded-lg hover:bg-blue-500 transition duration-200">受信を開始</button>
+      
+      <div class="progress-bar"><div id="recvProgress" class="progress-bar-fill"></div></div>
+      
+      <div id="receivingFileList" class="file-list hidden">
+        <h3 class="font-bold mb-2">受信中のファイル:</h3>
+        <ul id="receivingFileUl"></ul>
+      </div>
+      
+      <div id="fileContainer" class="mt-4"></div>
+    </div>
   </div>
 
-  <div class="card">
-    <h2>受信</h2>
-    <button id="scanBtn">QRを読み取る</button>
-    <div id="reader" style="max-width: 400px;"></div>
-    <label>magnet URI:</label>
-    <input type="text" id="magnetInput" placeholder="magnet:?xt=...">
-    <button id="downloadBtn">受信を開始</button>
-    <div class="progress-bar"><div id="recvProgress" class="progress-bar-fill"></div></div>
-    <div id="fileContainer"></div>
-  </div>
-
+  <!-- WebTorrent と QRCode、html5-qrcodeライブラリの読み込み -->
   <script src="https://cdn.jsdelivr.net/npm/webtorrent/webtorrent.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <script>
+    // WebTorrentクライアントを初期化
     const client = new WebTorrent();
+    let qrReader; // QRコードリーダーのインスタンスを保持するための変数
+
+    // カスタムアラート機能
+    function showMessage(message) {
+      const modal = document.createElement('div');
+      modal.className = "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50";
+      modal.innerHTML = `
+        <div class="relative p-8 bg-white w-96 max-w-sm rounded-lg shadow-xl text-center">
+          <p class="text-lg font-semibold text-gray-800">${message}</p>
+          <button onclick="this.parentElement.parentElement.remove();" class="mt-4 bg-[#008BF2] text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-500 transition duration-200">OK</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    // プログレスバーを更新する関数
     function updateProgress(id, val) {
       document.getElementById(id).style.width = `${val}%`;
     }
+    
+    // カメラ一覧を読み込み、ドロップダウンメニューに追加する関数
+    async function populateCameraList() {
+        const cameraSelect = document.getElementById('cameraSelect');
+        cameraSelect.innerHTML = ''; // リストをクリア
+        try {
+            const devices = await Html5Qrcode.getCameras();
+            if (devices && devices.length) {
+                devices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.id;
+                    option.text = device.label || `Camera ${cameraSelect.length + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+            } else {
+                showMessage("カメラが見つかりませんでした。");
+            }
+        } catch (err) {
+            console.error("Failed to get camera devices:", err);
+            showMessage("カメラデバイスの取得に失敗しました。");
+        }
+    }
+    
+    // ページロード時にカメラリストを読み込む
+    window.onload = populateCameraList;
+
+    // ファイル送信ロジック
     document.getElementById('shareBtn').onclick = () => {
-      const file = document.getElementById('fileInput').files[0];
-      if (!file) return alert("ファイルを選択してください");
+      const files = document.getElementById('fileInput').files;
+      if (files.length === 0) {
+        return showMessage("ファイルを選択してください");
+      }
+
+      // 共有中のファイル一覧をUIに表示
+      const sharingFileList = document.getElementById('sharingFileList');
+      const sharingFileUl = document.getElementById('sharingFileUl');
+      sharingFileList.classList.remove('hidden');
+      sharingFileUl.innerHTML = ''; // リストをクリア
+      for (const file of files) {
+        const li = document.createElement('li');
+        li.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+        sharingFileUl.appendChild(li);
+      }
+
       updateProgress('sendProgress', 10);
-      client.seed(file, torrent => {
+      
+      // 複数ファイルを一括でシード
+      client.seed(Array.from(files), torrent => {
         const magnet = torrent.magnetURI;
         document.getElementById('magnetDisplay').value = magnet;
         updateProgress('sendProgress', 100);
+        
+        // QRコードを生成して表示
         QRCode.toCanvas(document.createElement('canvas'), magnet, { width: 256 }, (err, canvas) => {
           if (!err) {
             const qrArea = document.getElementById('qrCanvas');
@@ -137,39 +188,86 @@
         });
       });
     };
+
+    // ファイル受信ロジック
     document.getElementById('downloadBtn').onclick = () => {
       const uri = document.getElementById('magnetInput').value.trim();
-      if (!uri) return alert("magnet URI を入力してください");
+      if (!uri) {
+        return showMessage("magnet URI を入力してください");
+      }
+
       updateProgress('recvProgress', 10);
+
       client.add(uri, torrent => {
+        // 受信中のファイル一覧をUIに表示
+        const receivingFileList = document.getElementById('receivingFileList');
+        const receivingFileUl = document.getElementById('receivingFileUl');
+        receivingFileList.classList.remove('hidden');
+        receivingFileUl.innerHTML = ''; // リストをクリア
         torrent.files.forEach(file => {
-          file.getBlob((err, blob) => {
-            if (err) return alert("ダウンロードエラー");
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = file.name;
-            a.textContent = `ダウンロード: ${file.name}`;
-            document.getElementById('fileContainer').appendChild(a);
-            updateProgress('recvProgress', 100);
+          const li = document.createElement('li');
+          li.textContent = `${file.name} (${(file.length / 1024 / 1024).toFixed(2)} MB)`;
+          receivingFileUl.appendChild(li);
+        });
+
+        // 全ファイルのダウンロードが完了したら実行
+        torrent.on('done', () => {
+          updateProgress('recvProgress', 100);
+          torrent.files.forEach(file => {
+            file.getBlob((err, blob) => {
+              if (err) return showMessage("ダウンロードエラー");
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = file.name;
+              a.textContent = `ダウンロード: ${file.name}`;
+              a.className = "block text-blue-600 hover:text-blue-800 transition duration-200 mt-2 break-all";
+              document.getElementById('fileContainer').appendChild(a);
+            });
           });
         });
+
+        // ダウンロードの進捗を更新
         torrent.on('download', () => {
           updateProgress('recvProgress', Math.floor(torrent.progress * 100));
         });
       });
     };
+
+    // QRコードスキャンロジック
     document.getElementById('scanBtn').onclick = () => {
-      const reader = new Html5Qrcode("reader");
-      reader.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
+      const cameraSelect = document.getElementById('cameraSelect');
+      const selectedCameraId = cameraSelect.value;
+      if (!selectedCameraId) {
+        return showMessage("カメラが選択されていません。");
+      }
+
+      // 前回のスキャンがまだ実行中の場合は停止
+      if (qrReader && qrReader.isScanning) {
+          qrReader.stop().catch(e => console.error("カメラ停止エラー:", e));
+      }
+      
+      const readerContainer = document.getElementById('reader');
+      qrReader = new Html5Qrcode("reader");
+      qrReader.start(
+        selectedCameraId, // 選択されたカメラのIDを使用
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         decoded => {
-          reader.stop();
+          qrReader.stop().catch(e => console.error("カメラ停止エラー:", e));
           document.getElementById('magnetInput').value = decoded;
         },
-        err => {}
-      ).catch(e => alert("カメラ起動に失敗: " + e));
+        err => {
+            // エラーをログに出力
+            console.error("QRスキャンエラー:", err);
+            // エラーメッセージをユーザーに表示
+            // showMessage("QRコードスキャン中にエラーが発生しました。");
+        }
+      ).catch(e => {
+          showMessage("カメラ起動に失敗しました: " + e);
+          console.error("カメラ起動エラー:", e);
+      });
     };
+
+    // PWA (Progressive Web App) の Service Worker を登録
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('service-worker.js')
         .then(reg => console.log("SW registered:", reg))
