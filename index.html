@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE ahtml>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -68,6 +68,7 @@
       <button id="shareBtn" class="w-full mt-4 bg-[#008BF2] text-white font-semibold py-2 rounded-lg hover:bg-blue-500 transition duration-200">共有リンクを生成</button>
       
       <div class="progress-bar"><div id="sendProgress" class="progress-bar-fill"></div></div>
+      <p id="sendTimeRemaining" class="text-sm text-gray-500 text-center mt-2"></p>
       
       <div id="sharingFileList" class="file-list hidden">
         <h3 class="font-bold mb-2">共有中のファイル:</h3>
@@ -96,6 +97,7 @@
       <button id="downloadBtn" class="w-full mt-4 bg-[#008BF2] text-white font-semibold py-2 rounded-lg hover:bg-blue-500 transition duration-200">受信を開始</button>
       
       <div class="progress-bar"><div id="recvProgress" class="progress-bar-fill"></div></div>
+      <p id="recvTimeRemaining" class="text-sm text-gray-500 text-center mt-2"></p>
       
       <div id="receivingFileList" class="file-list hidden">
         <h3 class="font-bold mb-2">受信中のファイル:</h3>
@@ -126,6 +128,8 @@
     const client = new WebTorrent();
     let qrReader; // QRコードリーダーのインスタンスを保持するための変数
     let wakeLock = null; // Wake Lockオブジェクトを保持する変数
+    let sendProgressTimer;
+    let recvProgressTimer;
 
     // Wake Lockを取得する関数
     async function acquireWakeLock() {
@@ -174,7 +178,17 @@
     function updateProgress(id, val) {
       document.getElementById(id).style.width = `${val}%`;
     }
-    
+
+    // 時間を秒単位から hh:mm:ss 形式にフォーマットする関数
+    function formatTime(seconds) {
+      if (seconds === Infinity) return "計算中...";
+      if (seconds < 0) return "完了";
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
     // カメラ一覧を読み込み、ドロップダウンメニューに追加する関数
     async function populateCameraList() {
         const cameraSelect = document.getElementById('cameraSelect');
@@ -231,6 +245,29 @@
         const magnet = torrent.magnetURI;
         document.getElementById('magnetDisplay').value = magnet;
         updateProgress('sendProgress', 100);
+
+        // 転送速度と残り時間の表示を更新
+        sendProgressTimer = setInterval(() => {
+          const uploaded = torrent.uploaded;
+          const total = torrent.length;
+          const uploadSpeed = torrent.uploadSpeed; // bytes/sec
+          
+          if (uploadSpeed > 0) {
+            const remainingBytes = total - uploaded;
+            const timeRemaining = remainingBytes / uploadSpeed;
+            document.getElementById('sendTimeRemaining').textContent = `アップロード速度: ${(uploadSpeed / 1024 / 1024).toFixed(2)} MB/s, 残り時間: ${formatTime(timeRemaining)}`;
+          } else {
+            document.getElementById('sendTimeRemaining').textContent = "アップロード速度: 計算中...";
+          }
+        }, 1000);
+
+        // 転送完了時にタイマーを停止
+        torrent.on('done', () => {
+          clearInterval(sendProgressTimer);
+          document.getElementById('sendTimeRemaining').textContent = "完了しました。";
+          // 転送完了時にWake Lockを解放
+          releaseWakeLock();
+        });
         
         // 転送完了時にWake Lockを解放
         releaseWakeLock();
@@ -269,10 +306,27 @@
           li.textContent = `${file.name} (${(file.length / 1024 / 1024).toFixed(2)} MB)`;
           receivingFileUl.appendChild(li);
         });
+        
+        // 転送速度と残り時間の表示を更新
+        recvProgressTimer = setInterval(() => {
+          const downloaded = torrent.downloaded;
+          const total = torrent.length;
+          const downloadSpeed = torrent.downloadSpeed; // bytes/sec
+
+          if (downloadSpeed > 0) {
+            const remainingBytes = total - downloaded;
+            const timeRemaining = remainingBytes / downloadSpeed;
+            document.getElementById('recvTimeRemaining').textContent = `ダウンロード速度: ${(downloadSpeed / 1024 / 1024).toFixed(2)} MB/s, 残り時間: ${formatTime(timeRemaining)}`;
+          } else {
+            document.getElementById('recvTimeRemaining').textContent = "ダウンロード速度: 計算中...";
+          }
+        }, 1000);
 
         // 全ファイルのダウンロードが完了したら実行
         torrent.on('done', () => {
           updateProgress('recvProgress', 100);
+          clearInterval(recvProgressTimer);
+          document.getElementById('recvTimeRemaining').textContent = "完了しました。";
           // 転送完了時にWake Lockを解放
           releaseWakeLock();
 
