@@ -238,13 +238,20 @@
         sharingFileUl.appendChild(li);
       }
 
-      updateProgress('sendProgress', 10);
-      
+      // 進捗状況を初期化
+      updateProgress('sendProgress', 0);
+
+      // マグネットリンク生成の進捗を表示
+      updateProgress('sendProgress', 50);
+
       // 複数ファイルを一括でシード
       client.seed(Array.from(files), torrent => {
         const magnet = torrent.magnetURI;
         document.getElementById('magnetDisplay').value = magnet;
         
+        // QRコード生成の進捗を表示
+        updateProgress('sendProgress', 100);
+
         // 転送速度と残り時間の表示を更新
         sendProgressTimer = setInterval(() => {
           const uploaded = torrent.uploaded;
@@ -266,12 +273,16 @@
         // 転送完了時にタイマーを停止
         torrent.on('done', () => {
           clearInterval(sendProgressTimer);
-          updateProgress('sendProgress', 100);
           document.getElementById('sendTimeRemaining').textContent = "完了しました。";
           // 転送完了時にWake Lockを解放
           releaseWakeLock();
         });
         
+        // 転送の進捗を更新
+        torrent.on('upload', () => {
+            // ここでは何も実行しない
+        });
+
         // QRコードを生成して表示
         QRCode.toCanvas(document.createElement('canvas'), magnet, { width: 256 }, (err, canvas) => {
           if (!err) {
