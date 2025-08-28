@@ -23,7 +23,6 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
       padding: 1.5rem;
       width: 100%;
-      /* 広い画面では左右に並べるために、カードの最大幅をなくす */
       max-width: none;
       margin: 2rem auto;
     }
@@ -53,6 +52,9 @@
       border: 1px solid #e5e7eb;
       border-radius: 8px;
       padding: 1rem;
+    }
+    .hidden {
+      display: none;
     }
   </style>
 </head>
@@ -105,6 +107,9 @@
       </div>
       
       <div id="fileContainer" class="mt-4"></div>
+
+      <!-- 一括ダウンロードボタンを追加 -->
+      <button id="bulkDownloadBtn" class="w-full mt-4 bg-green-500 text-white font-semibold py-2 rounded-lg hover:bg-green-600 transition duration-200 hidden">全ファイルを一括ダウンロード</button>
       
       <!-- URL QRコードセクションを追加 -->
       <div class="mt-8 pt-4 border-t border-gray-200">
@@ -119,10 +124,15 @@
     </div>
   </div>
 
-  <!-- WebTorrent と QRCode、html5-qrcodeライブラリの読み込み -->
+  <!-- WebTorrent, QRCode, html5-qrcode, JSZip, FileSaverライブラリの読み込み -->
   <script src="https://cdn.jsdelivr.net/npm/webtorrent/webtorrent.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
+  <!-- JSZipはファイルを圧縮するために使用します -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- FileSaverは生成したZIPファイルをダウンロードするために使用します -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  
   <script>
     // WebTorrentクライアントを初期化
     const client = new WebTorrent();
@@ -130,7 +140,21 @@
     let wakeLock = null; // Wake Lockオブジェクトを保持する変数
     let sendProgressTimer;
     let recvProgressTimer;
+    let currentTorrent; // 現在のトレントを保持する変数
 
+    // カスタムアラート機能
+    function showMessage(message) {
+      const modal = document.createElement('div');
+      modal.className = "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50";
+      modal.innerHTML = `
+        <div class="relative p-8 bg-white w-96 max-w-sm rounded-lg shadow-xl text-center">
+          <p class="text-lg font-semibold text-gray-800">${message}</p>
+          <button onclick="this.parentElement.parentElement.remove();" class="mt-4 bg-[#008BF2] text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-500 transition duration-200">OK</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+    
     // Wake Lockを取得する関数
     async function acquireWakeLock() {
       if ('keepAwake' in screen) {
@@ -159,19 +183,6 @@
             console.error("Wake Lock release failed:", err);
           });
       }
-    }
-
-    // カスタムアラート機能
-    function showMessage(message) {
-      const modal = document.createElement('div');
-      modal.className = "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50";
-      modal.innerHTML = `
-        <div class="relative p-8 bg-white w-96 max-w-sm rounded-lg shadow-xl text-center">
-          <p class="text-lg font-semibold text-gray-800">${message}</p>
-          <button onclick="this.parentElement.parentElement.remove();" class="mt-4 bg-[#008BF2] text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-500 transition duration-200">OK</button>
-        </div>
-      `;
-      document.body.appendChild(modal);
     }
 
     // プログレスバーを更新する関数
@@ -307,6 +318,8 @@
       updateProgress('recvProgress', 10);
 
       client.add(uri, torrent => {
+        currentTorrent = torrent; // 現在のトレントを保存
+
         // 受信中のファイル一覧をUIに表示
         const receivingFileList = document.getElementById('receivingFileList');
         const receivingFileUl = document.getElementById('receivingFileUl');
@@ -344,6 +357,7 @@
           // 転送完了時にWake Lockを解放
           releaseWakeLock();
 
+          // ファイルごとにダウンロードリンクを表示
           torrent.files.forEach(file => {
             file.getBlob((err, blob) => {
               if (err) return showMessage("ダウンロードエラー");
@@ -355,11 +369,51 @@
               document.getElementById('fileContainer').appendChild(a);
             });
           });
+
+          // 一括ダウンロードボタンを表示
+          document.getElementById('bulkDownloadBtn').classList.remove('hidden');
         });
 
         // ダウンロードの進捗を更新
         torrent.on('download', () => {
           updateProgress('recvProgress', Math.floor(torrent.progress * 100));
+        });
+      });
+    };
+
+    // 一括ダウンロード機能
+    document.getElementById('bulkDownloadBtn').onclick = () => {
+      if (!currentTorrent) {
+        showMessage("ダウンロードするファイルがありません。");
+        return;
+      }
+
+      const zip = new JSZip();
+      let filesToProcess = currentTorrent.files.length;
+      let processedFiles = 0;
+
+      currentTorrent.files.forEach(file => {
+        file.getBuffer((err, buffer) => {
+          if (err) {
+            console.error("ファイル読み込みエラー:", err);
+            processedFiles++;
+            return;
+          }
+          zip.file(file.path.split('/').pop(), buffer); // ファイル名を取得してZIPに追加
+          processedFiles++;
+
+          if (processedFiles === filesToProcess) {
+            // 全ファイルが処理されたらZIPファイルを生成
+            zip.generateAsync({ type: "blob" })
+              .then(blob => {
+                saveAs(blob, "downloaded_files.zip");
+                showMessage("すべてのファイルをZIPでダウンロードしました。");
+              })
+              .catch(err => {
+                console.error("ZIP生成エラー:", err);
+                showMessage("ZIPファイルの生成に失敗しました。");
+              });
+          }
         });
       });
     };
