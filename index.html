@@ -115,7 +115,7 @@
       <div class="mt-8 pt-4 border-t border-gray-200">
           <div class="flex justify-between items-center mb-2">
             <h3 class="text-lg font-bold">サイト共有</h3>
-            <button id="toggleUrlQrBtn" class="text-blue-600 hover:text-blue-800 transition duration-200">最大化</button>
+            <button id="toggleUrlQrBtn" class="text-blue-600 hover:text-blue-800 transition duration-200">最小化</button>
           </div>
           <div id="urlQrContainer" class="hidden">
             <div id="urlQrCanvas" class="flex justify-center mt-4"></div>
@@ -392,29 +392,32 @@
       let filesToProcess = currentTorrent.files.length;
       let processedFiles = 0;
 
-      currentTorrent.files.forEach(file => {
-        file.getBuffer((err, buffer) => {
-          if (err) {
-            console.error("ファイル読み込みエラー:", err);
-            processedFiles++;
-            return;
-          }
-          zip.file(file.path.split('/').pop(), buffer); // ファイル名を取得してZIPに追加
-          processedFiles++;
-
-          if (processedFiles === filesToProcess) {
-            // 全ファイルが処理されたらZIPファイルを生成
-            zip.generateAsync({ type: "blob" })
-              .then(blob => {
-                saveAs(blob, "downloaded_files.zip");
-                showMessage("すべてのファイルをZIPでダウンロードしました。");
-              })
-              .catch(err => {
-                console.error("ZIP生成エラー:", err);
-                showMessage("ZIPファイルの生成に失敗しました。");
-              });
-          }
+      // Promise.allを使用してすべてのストリーム処理が完了するのを待機
+      Promise.all(currentTorrent.files.map(file => {
+        return new Promise((resolve, reject) => {
+          const stream = file.createReadStream();
+          // ZIPにストリームを追加
+          zip.file(file.path.split('/').pop(), stream);
+          stream.on('end', () => {
+            resolve();
+          });
+          stream.on('error', (err) => {
+            console.error("ファイルストリームエラー:", err);
+            reject(err);
+          });
         });
+      }))
+      .then(() => {
+        // 全ファイルが処理されたらZIPファイルを生成
+        return zip.generateAsync({ type: "blob" });
+      })
+      .then(blob => {
+        saveAs(blob, "downloaded_files.zip");
+        showMessage("すべてのファイルをZIPでダウンロードしました。");
+      })
+      .catch(err => {
+        console.error("ZIP生成エラー:", err);
+        showMessage("ZIPファイルの生成に失敗しました。");
       });
     };
 
